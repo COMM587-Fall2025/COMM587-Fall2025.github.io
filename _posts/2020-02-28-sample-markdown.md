@@ -10,91 +10,379 @@ mathjax: true
 author: Bill Smith
 ---
 
-{: .box-success}
-This is a demo post to show you how to write blog posts with markdown.  I strongly encourage you to [take 5 minutes to learn how to write in markdown](https://markdowntutorial.com/) - it'll teach you how to transform regular text into bold/italics/tables/etc.<br/>I also encourage you to look at the [code that created this post](https://raw.githubusercontent.com/daattali/beautiful-jekyll/master/_posts/2020-02-28-sample-markdown.md) to learn some more advanced tips about using markdown in Beautiful Jekyll.
 
-**Here is some bold text**
-
-## Here is a secondary heading
-
-[This is a link to a different site](https://deanattali.com/) and [this is a link to a section inside this page](#local-urls).
-
-Here's a table:
-
-| Number | Next number | Previous number |
-| :------ |:--- | :--- |
-| Five | Six | Four |
-| Ten | Eleven | Nine |
-| Seven | Eight | Six |
-| Two | Three | One |
-
-You can use [MathJax](https://www.mathjax.org/) to write LaTeX expressions. For example:
-When \\(a \ne 0\\), there are two solutions to \\(ax^2 + bx + c = 0\\) and they are $$x = {-b \pm \sqrt{b^2-4ac} \over 2a}.$$
-
-How about a yummy crepe?
-
-![Crepe](https://beautifuljekyll.com/assets/img/crepe.jpg)
-
-It can also be centered!
-
-![Crepe](https://beautifuljekyll.com/assets/img/crepe.jpg){: .mx-auto.d-block :}
-
-Here's a code chunk:
-
-~~~
-var foo = function(x) {
-  return(x + 5);
-}
-foo(3)
-~~~
-
-And here is the same code with syntax highlighting:
-
-```javascript
-var foo = function(x) {
-  return(x + 5);
-}
-foo(3)
+```python
+import numpy as np
+import pandas as pd
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+import matplotlib.pyplot as plt
+from sklearn.cluster import KMeans
+from sklearn.linear_model import LogisticRegression
+from collections import Counter
+import seaborn as sns
 ```
 
-And here is the same code yet again but with line numbers:
+##Survey Work
 
-{% highlight javascript linenos %}
-var foo = function(x) {
-  return(x + 5);
+Not a lot of great survey data out there so let's just simulate as we go, this is probably going to be cleaner than a real life example.
+
+
+First we will build our data
+
+
+```python
+np.random.seed(619)
+n = 900
+segments = np.random.choice([0, 1, 2], size=n, p=[0.35, 0.40, 0.25])
+
+demo = pd.DataFrame({
+    "id": range(1, n+1),
+    "age": np.random.normal(38 + segments*3, 8).astype(int),
+    "gender": np.random.choice(["Male", "Female", "Other"], n, p=[0.45,0.45,0.1]),
+    "region": np.random.choice(["North","South","East","West"], n)
+})
+
+att_cols = ["Quality","Value","Trust","Innovation","Sustainability"]
+base_means = {
+    0: [3,5,3,2,2],  # Value Seekers
+    1: [5,3,5,3,3],  # Quality Loyalists
+    2: [4,3,4,5,5]   # Eco Innovators
 }
-foo(3)
-{% endhighlight %}
 
-## Boxes
-You can add notification, warning and error boxes like this:
+att = np.vstack([
+    np.clip(np.random.normal(base_means[s], 0.7), 1, 5)
+    for s in segments
+])
+att_df = pd.DataFrame(att, columns=att_cols)
 
-### Notification
+survey = pd.concat([demo, att_df], axis=1)
+survey["segment_true"] = segments
 
-{: .box-note}
-**Note:** This is a notification box.
+survey["purchase_intent"] = np.clip(
+    0.3*survey["Quality"] + 0.4*survey["Trust"] + np.random.normal(2.5, 0.7, n),
+    1, 5
+).round()
 
-### Warning
+for b in ["Brand_A", "Brand_B", "Brand_C"]:
+    survey[b] = np.random.randint(1,11,n)
+survey.loc[survey.segment_true==1, "Brand_A"] += 1
+survey.loc[survey.segment_true==2, "Brand_C"] += 2
+survey[["Brand_A","Brand_B","Brand_C"]] = survey[["Brand_A","Brand_B","Brand_C"]].clip(1,10)
 
-{: .box-warning}
-**Warning:** This is a warning box.
+survey.loc[survey.region=="West","Sustainability"] += 0.5
+survey.loc[survey.age>50,"Innovation"] -= 0.3
+survey[att_cols] = survey[att_cols].clip(1,5)
+survey.head()
+```
 
-### Error
+We can see some of the latent structures.
 
-{: .box-error}
-**Error:** This is an error box.
 
-## Local URLs in project sites {#local-urls}
+```python
+X = StandardScaler().fit_transform(survey[att_cols])
+pca = PCA(2)
+proj = pca.fit_transform(X)
 
-When hosting a *project site* on GitHub Pages (for example, `https://USERNAME.github.io/MyProject`), URLs that begin with `/` and refer to local files may not work correctly due to how the root URL (`/`) is interpreted by GitHub Pages. You can read more about it [in the FAQ](https://beautifuljekyll.com/faq/#links-in-project-page). To demonstrate the issue, the following local image will be broken **if your site is a project site:**
+plt.scatter(proj[:,0], proj[:,1], c=survey.segment_true, cmap='tab10', alpha=0.7)
+plt.title("True Attitudinal Segments")
+plt.xlabel("PCA1"); plt.ylabel("PCA2")
+plt.show()
 
-![Crepe](/assets/img/crepe.jpg)
+```
 
-If the above image is broken, then you'll need to follow the instructions [in the FAQ](https://beautifuljekyll.com/faq/#links-in-project-page). Here is proof that it can be fixed:
 
-![Crepe]({{ '/assets/img/crepe.jpg' | relative_url }})
+```python
+proj
+```
 
-<details markdown="1">
-<summary>Click here!</summary>
-Here you can see an **expandable** section
-</details>
+Cronbach's alpha is a common method for scale reliabilty, if you score high or low on a given battery of questions these scores should be internally consistent with each other. The scores will be low here but generally speaking this is used for scale validation.
+
+
+```python
+def cronbach_alpha(df):
+    df_corr = df.corr()
+    N = df.shape[1]
+    mean_r = df_corr.values[np.triu_indices(N, 1)].mean()
+    return (N * mean_r) / (1 + (N - 1) * mean_r)
+
+alpha = cronbach_alpha(survey[att_cols])
+print(f"Cronbach’s alpha: {alpha:.2f}")
+
+```
+
+
+```python
+X = StandardScaler().fit_transform(survey[att_cols])
+kmeans = KMeans(n_clusters=3, random_state=0)
+survey['segment_pred'] = kmeans.fit_predict(X)
+
+pd.crosstab(survey.segment_true, survey.segment_pred, normalize='index').round(2)
+
+```
+
+
+```python
+survey
+```
+
+
+```python
+select_survey = survey[['segment_pred'] + att_cols]
+```
+
+By looking at the various elements we can extract elements that people care about.
+
+
+```python
+display(select_survey.groupby('segment_pred').mean().reset_index())
+```
+
+##Max Diff
+
+ We can simulate data for MaxDiff analysis. This attempts to force people to make distinct choices and rank what they prefer/like. By transforming the problem into a regression we can also express "utilities" of each group to show how it influences the ranking.
+
+
+```python
+np.random.seed(651)
+n = 900
+n_tasks = 8
+
+features = [
+    "Battery life",
+    "Camera quality",
+    "Screen size",
+    "Storage capacity",
+    "Processor speed",
+    "Durability",
+    "5G connectivity",
+    "Brand reputation",
+    "Price",
+    "Design aesthetics"
+]
+
+true_utils = np.array([2.2, 2.0, 1.0, 1.2, 1.4, 0.8, 0.5, 0.3, -1.5, -0.8])
+choices = []
+
+for resp in range(n):
+    for t in range(n_tasks):
+        shown = np.random.choice(features, 4, replace=False)
+        utils = np.array([true_utils[features.index(f)] for f in shown])
+        probs = np.exp(utils) / np.exp(utils).sum()
+        best = np.random.choice(shown, p=probs)
+        worst = np.random.choice([f for f in shown if f != best])
+        choices.append([resp, t, shown.tolist(), best, worst])
+
+maxdiff = pd.DataFrame(choices, columns=['id','task','features','best','worst'])
+
+display(maxdiff)
+```
+
+The easiest form of a max diff analysis to count how often people rank something as `best` or most important versus `worst` or least important. The difference between these counts divided by the total number of respondants gets us a crude ranking.
+
+
+```python
+best_counts = Counter(maxdiff['best'])
+worst_counts = Counter(maxdiff['worst'])
+
+scores = pd.DataFrame({
+    'Feature': features,
+    'Best': [best_counts[f] for f in features],
+    'Worst': [worst_counts[f] for f in features]
+})
+scores['Score'] = (scores['Best'] - scores['Worst']) / n
+scores.sort_values('Score', ascending=False)
+
+```
+
+For analysis we need to pivot the data out into long format.
+
+
+```python
+rows = []
+for _, row in maxdiff.iterrows():
+    for f in row['features']:
+        rows.append({
+            'id': row['id'],
+            'task': row['task'],
+            'feature': f,
+            'chosen': 1 if f == row['best'] else (0 if f == row['worst'] else np.nan)
+        })
+df = pd.DataFrame(rows).dropna()
+display(df)
+```
+
+Get dummies allows us a fast adhoc way to do one hot encoding.
+
+
+```python
+X = pd.get_dummies(df['feature'])
+y = df['chosen']
+```
+
+
+```python
+X
+```
+
+The problem just decomposes down to a logistic regression. We're only interested in the coefficients so we don't need to fit an intercept.
+
+
+```python
+logit = LogisticRegression(fit_intercept=False, solver='lbfgs')
+logit.fit(X, y)
+```
+
+Our coefficients get named utility, becasue why be consistent!
+
+
+```python
+utilities = pd.DataFrame({
+    'Feature': X.columns,
+    'Utility': logit.coef_[0]
+}).sort_values('Utility', ascending=False)
+
+utilities['Utility_Norm'] = (utilities['Utility'] - utilities['Utility'].mean()) / np.ptp(utilities['Utility']) * 100
+display(utilities)
+```
+
+
+```python
+
+plt.figure(figsize=(8,5))
+plt.barh(utilities['Feature'], utilities['Utility_Norm'])
+plt.gca().invert_yaxis()
+plt.title("MaxDiff Utilities – Smartphone Features")
+plt.xlabel("Relative Preference (0–100)")
+plt.show()
+
+```
+
+
+```python
+u = utilities['Utility'].values
+p = np.exp(u) / np.sum(np.exp(u))
+utilities['Preference_Share_%'] = (p * 100).round(1)
+utilities
+
+```
+
+##Conjoint Analysis
+
+Conjoint analysis extends MaxDiff by allowing for ranking of attributes and attempting to make people clarify what they want and why. People are presented with different pairings of factors and asked to rate one over another, the aggregation up of these factors allows us to expose broader preferences.
+
+
+```python
+import itertools
+attributes = {
+    'Price': ['Low','Medium','High'],
+    'Battery': ['Short','Medium','Long'],
+    'Camera': ['Basic','Good','Excellent']
+}
+profiles = pd.DataFrame(list(itertools.product(*attributes.values())), columns=attributes.keys())
+profiles['profile_id'] = profiles.index
+```
+
+
+```python
+choices = []
+for r in range(n):
+    for t in range(6):
+        pair = profiles.sample(2)
+        util = (
+            pair['Price'].map({'Low':2,'Medium':1,'High':0}) +
+            pair['Battery'].map({'Long':2,'Medium':1,'Short':0}) +
+            pair['Camera'].map({'Excellent':2,'Good':1,'Basic':0}) +
+            np.random.normal(0,0.5,len(pair))
+        )
+        chosen = pair.iloc[util.argmax()]
+        choices.append({
+            'id': r,
+            'task': t,
+            'alt1': pair.iloc[0]['profile_id'],
+            'alt2': pair.iloc[1]['profile_id'],
+            'chosen': chosen['profile_id']
+        })
+conjoint = pd.DataFrame(choices)
+
+display(conjoint)
+```
+
+
+```python
+X = pd.get_dummies(profiles[['Price','Battery','Camera']], drop_first=True)
+profile_map = {i: X.iloc[i].values for i in profiles['profile_id']}
+
+y, X_list = [], []
+for _, row in conjoint.iterrows():
+    for alt in [row['alt1'], row['alt2']]:
+        y.append(1 if alt == row['chosen'] else 0)
+        X_list.append(profile_map[alt])
+X_mat = np.vstack(X_list)
+y = np.array(y)
+```
+
+
+```python
+X
+```
+
+
+```python
+y
+```
+
+by regressing on how ofter a person chose that given value we can express the importance of that factor.
+
+
+```python
+logit = LogisticRegression()
+logit.fit(X_mat, y)
+pd.DataFrame({'Attribute_Level': X.columns, 'Utility': logit.coef_[0]})
+```
+
+## NPS
+
+Everyone scores on a ten point scale, if you are between 0 to 6 you are a `detractor` 7-8 are `passive` and 9-10 are `promoters`  this is a broadly used brand health metrics
+
+
+
+```python
+
+survey['nps_score'] = np.random.randint(0,11,n)
+survey['nps_type'] = pd.cut(
+    survey['nps_score'], bins=[-1,6,8,10],
+    labels=['Detractor','Passive','Promoter']
+)
+
+nps_summary = survey['nps_type'].value_counts(normalize=True)*100
+nps_value = nps_summary['Promoter'] - nps_summary['Detractor']
+
+print("NPS breakdown:\n", nps_summary)
+print(f"Overall NPS: {nps_value:.1f}")
+
+sns.barplot(survey, x='segment_pred', y='nps_score', estimator='mean')
+plt.title("Average NPS by Predicted Segment")
+plt.show()
+
+```
+
+
+```python
+small_survey = survey[att_cols + ['nps_score','nps_type']]
+```
+
+
+```python
+small_survey.groupby('nps_type').mean()
+```
+
+
+```python
+%sh jupyter nbconvert --to markdown Week11-survey_work.ipynb
+```
+
+
+```python
+
+```
