@@ -1,12 +1,11 @@
 ---
 layout: post
-title: markdown
-subtitle: mmt
-tags: [test]
-comments: true
-mathjax: true
-author: Bill Smith
+title: Week 11 Notes
+subtitle: Demo Demo Demo
+author: Josh Clark
 ---
+
+
 
 
 ```python
@@ -15,7 +14,10 @@ import pandas as pd
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
-
+from sklearn.cluster import KMeans
+from sklearn.linear_model import LogisticRegression
+from collections import Counter
+import seaborn as sns
 ```
 
 ##Survey Work
@@ -86,6 +88,11 @@ plt.show()
 
 ```
 
+
+```python
+proj
+```
+
 Cronbach's alpha is a common method for scale reliabilty, if you score high or low on a given battery of questions these scores should be internally consistent with each other. The scores will be low here but generally speaking this is used for scale validation.
 
 
@@ -103,8 +110,6 @@ print(f"Cronbach’s alpha: {alpha:.2f}")
 
 
 ```python
-from sklearn.cluster import KMeans
-
 X = StandardScaler().fit_transform(survey[att_cols])
 kmeans = KMeans(n_clusters=3, random_state=0)
 survey['segment_pred'] = kmeans.fit_predict(X)
@@ -136,9 +141,6 @@ display(select_survey.groupby('segment_pred').mean().reset_index())
 
 
 ```python
-import numpy as np, pandas as pd
-from sklearn.linear_model import LogisticRegression
-
 np.random.seed(651)
 n = 900
 n_tasks = 8
@@ -177,8 +179,6 @@ The easiest form of a max diff analysis to count how often people rank something
 
 
 ```python
-from collections import Counter
-
 best_counts = Counter(maxdiff['best'])
 worst_counts = Counter(maxdiff['worst'])
 
@@ -217,6 +217,11 @@ X = pd.get_dummies(df['feature'])
 y = df['chosen']
 ```
 
+
+```python
+X
+```
+
 The problem just decomposes down to a logistic regression. We're only interested in the coefficients so we don't need to fit an intercept.
 
 
@@ -240,7 +245,7 @@ display(utilities)
 
 
 ```python
-import matplotlib.pyplot as plt
+
 plt.figure(figsize=(8,5))
 plt.barh(utilities['Feature'], utilities['Utility_Norm'])
 plt.gca().invert_yaxis()
@@ -316,7 +321,7 @@ y = np.array(y)
 
 
 ```python
-X_mat
+X
 ```
 
 
@@ -340,7 +345,6 @@ Everyone scores on a ten point scale, if you are between 0 to 6 you are a `detra
 
 
 ```python
-import seaborn as sns
 
 survey['nps_score'] = np.random.randint(0,11,n)
 survey['nps_type'] = pd.cut(
@@ -362,7 +366,12 @@ plt.show()
 
 
 ```python
+small_survey = survey[att_cols + ['nps_score','nps_type']]
+```
 
+
+```python
+small_survey.groupby('nps_type').mean()
 ```
 
 
